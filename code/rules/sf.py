@@ -21,6 +21,38 @@ rule tpmMatrix:
         dfM = reduce(lambda left, right: pandas.merge(left, right, on='gene_id', how='outer').fillna(0), dfLs2)
         dfM.to_csv(output.o, index=False, sep='\t')
 
+# tximport needs gene names, not ensembl IDs
+rule replaceGeneId:
+    input:  i = DATA + 'counts/{afile}',
+            t = DATA + 'ensemblSyn.mm9'
+    output: o = DATA + 'countsForTximport/{afile}'
+    run:
+        with open(input.t) as f:
+            trans = {}
+            for line in f:
+                sp = line.strip().split('\t')
+                trans[ sp[1] ] = sp[2]
+
+        counts = defaultdict(int)
+        with open(input.i) as f:
+            for line in f:
+                sp = line.strip().split('\t')
+                eg = sp[0].lstrip('"').strip('"').split('.')[0]
+                if eg in trans:
+                    g = trans[eg]
+                    counts[g] += 1
+
+        with open(input.i) as f, open(output.o, 'w') as fout:
+            print('\t'.join( f.readline().strip().split() ), file=fout)
+            for line in f:
+                sp = line.strip().split('\t')
+                eg = sp[0].lstrip('"').strip('"').split('.')[0]
+                if eg in trans:
+                    g = trans[eg]
+                    if counts[g] == 1:
+                        print(g + '\t' + '\t'.join(sp[1:]), file=fout)
+        
+    
 rule addGenesNames:
     input:  i = DATA + '{afile}',
             t = '/mnt/isilon/gerdblobel_lab/perry/credwards_gene_alias/data/ensemblSyn.mm9'
@@ -31,6 +63,25 @@ rule addGenesNames:
             for line in f:
                 sp = line.strip().split('\t')
                 trans[ sp[1] ] = sp[2]
+
+        counts = defaultdict(int)
+        with open(input.i) as f:
+            for line in f:
+                sp = line.strip().split('\t')
+                eg = sp[0].lstrip('"').strip('"').split('.')[0]
+                if eg in trans:
+                    g = trans[eg]
+                    counts[g] += 1
+
+        with open(input.i) as f, open(output.o, 'w') as fout:
+            print(f.readline().strip(), file=fout)
+            for line in f:
+                sp = line.strip().split('\t')
+                eg = sp[0].lstrip('"').strip('"').split('.')[0]
+                if eg in trans:
+                    g = trans[eg]
+                    if counts[g] == 1:
+                        print(g + '\t' + '\t'.join(sp[1:]), file=fout)
         
         counts = defaultdict(int)
         with open(input.i) as f:
@@ -67,5 +118,10 @@ rule fdr:
     output: DATA + 'de.txt'
     shell:  '{RSEM}rsem-control-fdr {input} 0.05 {output}'
 
+rule all2:
+    input: expand( DATA + 'countsForTximport/{cellrep}.tsv', cellrep=TSV )
+
 rule all:
     input: DATA + 'mat.ebseq.normalized_data_matrix.genes', DATA + 'tpm.mat.genes', DATA + 'de.txt' #expand( DATA + 'counts/{cellrep}.tsv', cellrep=TSV )
+
+
